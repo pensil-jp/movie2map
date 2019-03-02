@@ -55,7 +55,7 @@ DEL /F /Q work\*.png
 %PYTHON% movie2map.py
 
 @REM 出力ファイルのリネーム
-RENAME "map.png" "%1.png"
+RENAME map.png %~nx1.png
 
 GOTO ENDOFBATCH
 
