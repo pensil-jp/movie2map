@@ -1,4 +1,4 @@
-＃movie2map
+#movie2map
 movie2mapは、2Dムービーから2Dマップを生成するためのシンプルなツールです。
 
 システム要件：
@@ -7,13 +7,13 @@ movie2mapは、2Dムービーから2Dマップを生成するためのシンプ�
 * Windows もしくは Linux OS
 
 インストール手順：
-1）FFMPEG、PYTHON、NUMPY、PILLOWをインストールします。
+1) FFMPEG、PYTHON、NUMPY、PILLOWをインストールします。
    既にインストール済みの場合は不要です。
-2）https://github.com/pensil-jp/movie2map を開き、
+2) https://github.com/pensil-jp/movie2map を開き、
    [Clone or download]をクリックして、[Download ZIP] をクリックして、
    movie2map-XXXXX.zip をダウンロードします。
-3）movie2map-XXXXX.zipをコンピュータに解凍します。
-4）Windowsの場合：
+3) movie2map-XXXXX.zipをコンピュータに解凍します。
+4) Windowsの場合：
    メモ帳などで movie2map.bat を開き、ffmpeg.exeとpython.exeの場所を入力します。
    環境変数PATHに含まれている場合、この手順は不要です。
    Linuxの場合：
