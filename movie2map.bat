@@ -1,7 +1,7 @@
 @ECHO OFF
 SETLOCAL
 
-@ECHO movie2map - 動画からマップを作成するツール ver0.1 by pensil 2019.02.26
+@ECHO movie2map - a simple tool for generating 2D maps from 2D movies  ver0.1 by pensil 2019.02.26
 @ECHO.
 @REM (使い方)
 @REM ffmpeg.exeにパスを通すか、下の環境変数 FFMPEG にコマンドのフルパスを記載してください
@@ -60,8 +60,7 @@ RENAME map.png %~nx1.png
 GOTO ENDOFBATCH
 
 :USAGE
-ECHO.
-ECHO 使い方(Usage) : movie2map.bat [FILENAME]
+ECHO Usage) : movie2map.bat [FILENAME]
 
 :ENDOFBATCH
 ENDLOCAL
