@@ -125,7 +125,7 @@ im1 = getImage(c)
 [h, w] = im1[:,:,0].shape
 print ('size of movie (width, height) : {:>6},{:>6}'.format(w, h))
 
-sq = SquareIndex(h, w, 16, 800, 10)
+sq = SquareIndex(h, w, 16, 1000, 10)
 
 prev = im1
 previ = sq.convert(im1)
@@ -144,7 +144,7 @@ while 1:
         img = getImage(c)
 
         diff = diffimage(img, prev)
-        if diff < 1000:
+        if diff < 200:
             print ('  skip      : {:>6},{:>6},{:>6},{:>6},{:>10.4f}'.format(x, y, 0, 0, diff))
         else:
             imgi = sq.convert(img)
