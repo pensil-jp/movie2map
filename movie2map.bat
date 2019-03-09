@@ -1,4 +1,4 @@
-@ECHO OFF
+﻿@ECHO OFF
 SETLOCAL
 
 @ECHO movie2map - a simple tool for generating 2D maps from 2D movies  ver0.1 by pensil 2019.02.26
@@ -43,19 +43,20 @@ DEL /F /Q work\*.png
 
 :START
 @REM ffmpegのパラメータについて
-@REM  -r : 1秒あたり何枚までフレーム分解するか。移動量の誤検知があるときは値を大きくしてください。
-@REM       デフォルト5、最大30です。あまり大きくすると解析に時間がかかります。
+@REM  -r : 1秒あたり何枚までフレーム分解するか。移動量の誤検知があるときは値を大きくしてください
 @REM -ss : 開始時間(秒)
 @REM  -t : 終了時間(秒)
 
 @REM ffmpegによる動画→静止画分解
-%FFMPEG% -i %1 -ss 0 -r 5 -f image2 work\%%06d.png
+@REM %FFMPEG% -i %1 -vf crop=900:665:200:50 -ss 0 -r 2 -f image2 work\%%06d.png
+%FFMPEG% -i %1 -ss 0 -r 2 -f image2 work\%%06d.png
 
 @REM 静止画の解析と結合
 %PYTHON% movie2map.py
 
 @REM 出力ファイルのリネーム
-RENAME map.png %~nx1.png
+MOVE /Y map.png %1.png
+PAUSE
 
 GOTO ENDOFBATCH
 
