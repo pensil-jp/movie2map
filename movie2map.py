@@ -1,18 +1,33 @@
 # coding: UTF-8
-from PIL import Image
-
 import numpy as np
-import os
+import cv2
+import sys
+import argparse
 import time
 
 # movie2map : 動画からマップを作成するツール ver0.1 by pensil 2019.02.26
 # ソースコードを参考にしていただくことはかまいませんが、著作権は放棄していません
 
+#useffmpeg = False
+#cap = cv2.VideoCapture('c:/workspace/test/2019_02_28_11_53_18.mp4')
+
 def diffimage(src, dst): return np.sum((src - dst)**2)/np.size(src)
 
-def getImage(c): return np.array(Image.open(str.format('work/{:06}.png', c)), dtype=np.float)
+def getImage(cap, c, x, y, width, height, compress):
+    #if (useffmpeg):
+    #    return np.array(cv2.imread(str.format('work/{:06}.png', c)), dtype=np.float)
+    cap.set(cv2.CAP_PROP_POS_FRAMES, c)
+    #ret, frame = cap.read()
+    frame = cap.read()[1]
+    frame = frame[y:y+height, x:x+width]
+    if (compress != 1.0):
+        frame = cv2.resize(frame, None, fx = compress, fy = compress)
+    #print(ret)
+    #print(cap.get(cv2.CAP_PROP_POS_FRAMES))
+    #putImage(img, "work/test_out{:06}.png".format(c))
+    return frame.astype(np.float)
 
-def putImage(img, filename): Image.fromarray(np.array(img, dtype=np.uint8)).save(filename)
+def putImage(img, filename): cv2.imwrite(filename, np.array(img, dtype=np.uint8))
 
 def imageToGray(img): return 0.298912*img[:,:,0] + 0.586611 *img[:,:,1] + 0.114478*img[:,:,2]
 
@@ -79,7 +94,35 @@ class SquareIndex:
         if (mx > 5000):
             mx -= 10000
             my += 1
-        return mx, my, counts[midx]
+        return mx, my, counts[midx]/srcs
+
+    def searchNXY(self, src, dst, sxy, dxy, deps):
+        srcs = np.shape(sxy)[0]
+        dsts = np.shape(dxy)[0]
+        vxy = sxy.repeat(dsts).reshape(srcs, dsts).T.reshape(-1) - dxy.repeat(srcs)
+        unique, counts = np.unique(vxy, return_counts=True)
+
+        maxp = len(counts)
+        if maxp > deps:
+            maxp = deps
+        cvals = np.zeros(maxp, dtype=np.float)
+        unsorted_max_indices = np.argpartition(-counts, maxp)[:maxp]
+        for i in range(maxp):
+            idx = unique[unsorted_max_indices[i]]
+            mx, my = idx % 10000, idx // 10000
+            if (mx > 5000):
+                mx -= 10000
+                my += 1
+            cvals[i] = diffmoveimage(src, dst, mx, my)
+
+        midx = np.argmin(cvals)
+
+        idx = unique[unsorted_max_indices[midx]]
+        mx, my = idx % 10000, idx // 10000
+        if (mx > 5000):
+            mx -= 10000
+            my += 1
+        return mx, my, counts[unsorted_max_indices[midx]]/srcs
 
     def limitSet(self, idx, deps):
         np.random.shuffle(idx)
@@ -93,8 +136,13 @@ class SquareIndex:
         dxy1 = self.limitSet(dxy, deps)
         return self.searchXY(sxy1, dxy1)
 
-    def convert(self, img):
-        data = imageToBoolean(img, 40)
+    def searchNRandom(self, src, dst, sxy, dxy, deps, count):
+        sxy1 = self.limitSet(sxy, deps)
+        dxy1 = self.limitSet(dxy, deps)
+        return self.searchNXY(src, dst, sxy1, dxy1, count)
+
+    def convert(self, img, pbright):
+        data = imageToBoolean(img, pbright)
         srcv = data[self.sry, self.srx].reshape(self.sc, self.rc).sum(axis=1)
         si = np.array(np.where(srcv == self.c)[0], dtype=np.int)
         [sy, sx] = np.unravel_index(si, (self.sh, self.sw))
@@ -112,47 +160,26 @@ class SquareIndex:
             print(' no move many dot match! {:}, {:}, {:}'.format(srcs, dsts, dups))
             return 0, 0, 0
 
-        c = 0
+        c = 1
         #print(' check! : {:}, {:})'.format(srcs, dsts))
-        while 1:
-            c += 1
-            deps = self.deps * c
-            if (srcs <= deps and dsts <= deps):
-                return self.searchXY(sxy, dxy)
+        deps = self.deps * c
+        if (srcs <= deps and dsts <= deps):
+            #print(' self.searchNXY')
+            return self.searchNXY(src, dst, sxy, dxy, self.count)
 
-            # ダブルチェックで一致しないとOKとしない
-            mx1, my1, c1 = self.searchRandom(sxy, dxy, deps)
-            mx2, my2, c2 = self.searchRandom(sxy, dxy, deps)
-            if (mx1 == mx2 and my1 == my2 and c1 > c * 20): return mx1, my1, c1
-            mx3, my3, c3 = self.searchRandom(sxy, dxy, deps)
-            if (mx1 == mx3 and my1 == my3 and c1 > c * 20): return mx1, my1, c1
-            if (mx2 == mx3 and my2 == my3 and c2 > c * 20): return mx2, my2, c2
+        # ダブルチェックで一致しないとOKとしない
+        mx1, my1, c1 = self.searchRandom(sxy, dxy, deps)
+        mx2, my2, c2 = self.searchRandom(sxy, dxy, deps)
+        if (mx1 == mx2 and my1 == my2 and c1 > 0.06): return mx1, my1, c1
+        mx3, my3, c3 = self.searchRandom(sxy, dxy, deps)
+        if (mx1 == mx3 and my1 == my3 and c1 > 0.06): return mx1, my1, c1
+        if (mx2 == mx3 and my2 == my3 and c2 > 0.06): return mx2, my2, c2
 
-            if (c >= self.count):
-                # ここで決着がつかない場合は、画像比較で結論を出す
-                div1 = diffmoveimage(src, dst, mx1, my1)
-                print(' mx1, my1, c1, div1 : {:}, {:}, {:}, {:}'.format(mx1, my1, c1, div1))
-                #print(' check! : {:}, {:})'.format(srcs, dsts))
-                if (mx1 != mx2 or my1 != my2):
-                    div2 = diffmoveimage(src, dst, mx2, my2)
-                    print(' mx2, my2, c2, div2 : {:}, {:}, {:}, {:}'.format(mx2, my2, c2, div2))
-                else:
-                    div2 = div1
-                if (mx1 != mx3 or my1 != my3):
-                    if (mx2 != mx3 or my2 != my3):
-                        div3 = diffmoveimage(src, dst, mx3, my3)
-                        print(' mx3, mx3, c3, div3 : {:}, {:}, {:}, {:}'.format(mx3, my3, c3, div3))
-                    else:
-                        div3 = div2
-                else:
-                    div3 = div1
-                if (div1 < div2 and div1 < div3):
-                    return mx1, my1, c1
-                if (div2 < div1 and div2 < div3):
-                    return mx2, my2, c2
-                return mx3, my3, c3
-
-            print(' up to pass{:>2} : {:}, {:} ({:})  vs  {:}, {:} ({:}) vs  {:}, {:} ({:})  ({:} < {:}, {:}, {:})'.format(c, mx1, my1, c1, mx2, my2, c2, mx3, my3, c3, deps, srcs, dsts, dups))
+        # ここで決着がつかない場合は、画像比較で結論を出す
+        print(' self.searchNXY - again - too bad')
+        #return self.searchRandom(src, dst, sxy, dxy, deps*10, self.count)
+        return self.searchNRandom(src, dst, sxy, dxy, deps*3, self.count)
+        #return self.searchRandom(sxy, dxy, deps*3)
 
 def bokashi(img):
     img2 = img.copy()
@@ -163,79 +190,76 @@ def bokashi(img):
     img2[:,1:w] += img[:,0:w-1]*2
     return img2
 
-def movie2map():
+def movie2map(cap, outfile, startIndex, endIndex, rate, pcount, pbright, pdeps, testmode, iposx, iposy, width, height, compress, maskfile):
     start = time.time()
-
-    print ('read images --- ')
-    startIndex = 1
-    endIndex = 9999
 
     images = []
     posx = []
     posy = []
 
     c = startIndex
-    im1 = getImage(c)
+    im1 = getImage(cap, c, iposx, iposy, width, height, compress)
     [x, y, mx, my] = [0, 0, 0, 0]
     [h, w] = im1[:,:,0].shape
-    print ('size of movie (width, height) : {:>6},{:>6}'.format(w, h))
+    print ('size of image    : {:>6},{:>6}'.format(w, h))
+    print ('')
 
-    sq = SquareIndex(h, w, 4, 1000, 2)
+    sq = SquareIndex(h, w, pdeps, pcount, 4)
 
     prev = im1
-    previ = sq.convert(im1)
+    previ = sq.convert(im1, pbright)
     posx.append(x)
     posy.append(y)
     images.append(c)
-    c+= 1
+    c+= rate
 
     maskvar_test = np.zeros((h, w), dtype=np.float)
 
-    while 1:
-        if (os.path.exists(str.format('work/{:06}.png', c))):
-            print (str.format('{:06}.png ----------- ', c))
-            img = getImage(c)
+    while c <= endIndex:
+        print (str.format('frame {:}/{:} ({:>5.1f}%) ----------- ', int(c), int(endIndex), (c/endIndex)*100))
+        img = getImage(cap, c, iposx, iposy, width, height, compress)
 
-            diff = diffimage(img, prev)
-            if diff < 200:
-                print ('  skip      : {:>6},{:>6},{:>6},{:>6},{:>6} {:>10.4f}'.format(x, y, 0, 0, 0, diff))
+        diff = diffimage(img, prev)
+        if diff < 200:
+            print ('  skip      : {:>6},{:>6},{:>6},{:>6},{:>10.2f}% {:>10.4f}'.format(x, y, 0, 0, 0, diff))
+        else:
+            imgi = sq.convert(img, pbright)
+            if (np.shape(imgi)[0] == 0):
+                print ('  skip      : no data!!!')
             else:
-                imgi = sq.convert(img)
-                if (np.shape(imgi)[0] == 0):
-                    print ('  skip      : no data!!!')
-                else:
-                    mx, my, cp = sq.search(prev, img, previ, imgi)
-                    #testImage(c, prev, img, mx, my)
+                mx, my, cp = sq.search(prev, img, previ, imgi)
+                if (testmode == True):
+                    testImage(c, prev, img, mx, my)
 
-                    x += mx
-                    y += my
-                    print ('  pos       : {:>6},{:>6},{:>6},{:>6} {:>6} {:>10.4f}'.format(x, y, mx, my, cp, diff))
+                x += mx
+                y += my
+                print ('  pos       : {:>6},{:>6},{:>6},{:>6} {:>10.2f}% {:>10.4f}'.format(x, y, mx, my, cp*100, diff))
 
-                    if mx != 0 or my != 0:
+                if mx != 0 or my != 0:
+                    if maskfile == None:
                         maskvar_test += np.sum((img - prev)**2, axis=2)
 
-                    posx.append(x)
-                    posy.append(y)
-                    images.append(c)
-                    prev = img
-                    previ = imgi
+                posx.append(x)
+                posy.append(y)
+                images.append(c)
+                prev = img
+                previ = imgi
 
-        c+=1
-        if c > endIndex:
-            break
+        c+=rate
 
     posxl=np.array(posx)
     posyl=np.array(posy)
 
     # マスクの生成
-    maskf = np.zeros((h, w, 3), dtype=im1.dtype)
+    maskf = np.zeros((int(height*compress), int(width*compress), 3), dtype=im1.dtype)
     maskvar_testb = bokashi(maskvar_test)
 
-    #if os.path.exists('mask.png'):
-    if 0: # 既存のマスクを使用する
-        print ('use mask file : mask.png')
-        mask = np.array(Image.open('mask.png'))
-        maskf = np.where(mask < 128, 0, 1)
+    if (maskfile != None): # 既存のマスクを使用する
+        print ('use mask file : {:}'.format(maskfile))
+        mask = cv2.imread(maskfile)
+        maskf[:,:,0] = np.where(mask[:,:,0] < 128, 0, 1)
+        maskf[:,:,1] = maskf[:,:,0]
+        maskf[:,:,2] = maskf[:,:,0]
     else:
         # 分散をとって、マスクを作る
         mask = np.zeros((h, w, 3), dtype=im1.dtype)
@@ -261,19 +285,90 @@ def movie2map():
     for i in range(len(posx)):
         [x, y] = [int(posx[i]-xmin), int(posy[i]-ymin)]
         if ((lx - x)**2 + (ly - y)**2) > 1024:
-            print ('{:06}.png ----------- marge'.format(images[i]))
-            data = getImage(images[i]) * maskf
+            print ('frame {:} ----------- marge'.format(int(images[i])))
+            data = getImage(cap, images[i], iposx, iposy, width, height, compress) * maskf
             data[np.where(mapmask[y:y+h,x:x+w]>0)] = 0
 
             mapdata[y:y+h,x:x+w] += data
             mapmask[y:y+h,x:x+w] += maskf
             [lx, ly] = [x, y]
         else:
-            print ('{:06}.png ----------- skip '.format(images[i]))
+            print ('frame {:} ----------- skip '.format(int(images[i])))
 
-    putImage(mapdata,'map.png')
+    putImage(mapdata, outfile)
     process_time = time.time() - start
 
-    print ('Complete!! - ({:8.2f}sec)'.format(process_time))
+    print ('Complete!! -> {:} ({:8.2f}sec)'.format(outfile, process_time))
 
-movie2map()
+def main():
+    print ('movie2map - a simple tool for generating 2D maps from 2D movies  v2.0-beta by pensil 2019.03.11')
+    print ('')
+    parser = argparse.ArgumentParser()
+    parser.add_argument('input_filename')
+    parser.add_argument('-o', metavar='OUTPUT', help='出力ファイル名')
+    parser.add_argument('-m', metavar='MASK', help='マスクファイル 別に用意する場合のみ指定する')
+    parser.add_argument('-s', metavar='START(sec)', type=int, default=0, help='開始位置(秒)')
+    parser.add_argument('-e', metavar='END(sec)', type=int, default=180, help='終了位置(秒) デフォルト180秒 0にすると全て解析します')
+    parser.add_argument('-r', metavar='RATE', type=int, default=20, help='解析フレーム間隔 小さくすると精度が 上がりますが時間がかかります')
+    parser.add_argument('-c', metavar='COUNT', type=int, default=1500, help='サンプリング数(1000～5000) 多いほど 精度が上がりますが時間がかかります')
+    parser.add_argument('-b', metavar='BRITENESS', type=int, default=50, help='サンプリング閾値(20～128) 指定数より暗いポイントを識別します')
+    parser.add_argument('-d', metavar='DEPS', type=int, default=4, help='畳み込み範囲(2～5) 変更する必要はありません')
+    parser.add_argument('-test', action="store_true", help='比較テスト画像をworkフォルダに出力します 動作チェック用')
+    parser.add_argument('-x', metavar='XPOS', type=int, default=0, help='開始左座標')
+    parser.add_argument('-y', metavar='YPOS', type=int, default=0, help='開始上座標')
+    parser.add_argument('-width', default=0, type=int, help='幅')
+    parser.add_argument('-height', default=0, type=int, help='高さ')
+    parser.add_argument('-p', metavar='COMPRESSION', type=float, default=0.5, help='画像リサイズ率 1にすると原寸で処理 デフォルト0.5(半分)')
+
+    if len(sys.argv)==1:
+        parser.print_help()
+        sys.exit(1)
+
+    args = parser.parse_args()
+    print(args)
+
+    cap = cv2.VideoCapture(args.input_filename)
+
+    if (not cap.isOpened()):
+        print('cannot open file:{:}'.format(args.input_filename))
+        sys.exit(1)
+
+    output = args.input_filename + '.png'
+    if(args.o != None):
+        output = args.o
+
+    xpos = args.x
+    ypos = args.y
+
+    width = args.width
+    if (width == 0):
+        width = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
+    if (width + xpos > cap.get(cv2.CAP_PROP_FRAME_WIDTH)):
+        width = cap.get(cv2.CAP_PROP_FRAME_WIDTH) - xpos
+
+    height = args.height
+    if (height == 0):
+        height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
+    if (height + ypos > cap.get(cv2.CAP_PROP_FRAME_HEIGHT)):
+        height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT) - ypos
+
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    cof = cap.get(cv2.CAP_PROP_FRAME_COUNT)
+    mvs = cof / fps
+
+    stf = args.s * fps
+    if (stf > cof):
+        print('invalid start point: {:} > {:}'.format(args.s, mvs))
+        sys.exit(1)
+
+    enf = args.e * fps
+    if (enf > cof):
+        enf = cof
+
+    print('frames per second: {:>10}'.format(fps))
+    print('count of frames: {:>10}'.format(cof))
+    print('movie size(sec) :{:>10.2f}'.format(mvs))
+
+    movie2map(cap, output, stf, enf, args.r, args.c, args.b, args.d, args.test, int(xpos), int(ypos), int(width), int(height), args.p, args.m)
+
+main()
