@@ -17,8 +17,9 @@ def getImage(cap, c, x, y, width, height, compress):
     #if (useffmpeg):
     #    return np.array(cv2.imread(str.format('work/{:06}.png', c)), dtype=np.float)
     cap.set(cv2.CAP_PROP_POS_FRAMES, c)
-    #ret, frame = cap.read()
-    frame = cap.read()[1]
+    ret, frame = cap.read()
+    if not ret:
+        return False
     frame = frame[y:y+height, x:x+width]
     if (compress != 1.0):
         frame = cv2.resize(frame, None, fx = compress, fy = compress)
@@ -106,9 +107,10 @@ class SquareIndex:
         if maxp > deps:
             maxp = deps
         cvals = np.zeros(maxp, dtype=np.float)
-        unsorted_max_indices = np.argpartition(-counts, maxp)[:maxp]
+        idxes = np.argsort(-counts)[0:maxp]
+        #unsorted_max_indices = np.argpartition(-counts, maxp)[:maxp]
         for i in range(maxp):
-            idx = unique[unsorted_max_indices[i]]
+            idx = unique[i]
             mx, my = idx % 10000, idx // 10000
             if (mx > 5000):
                 mx -= 10000
@@ -116,13 +118,12 @@ class SquareIndex:
             cvals[i] = diffmoveimage(src, dst, mx, my)
 
         midx = np.argmin(cvals)
-
-        idx = unique[unsorted_max_indices[midx]]
+        idx = unique[idxes[midx]]
         mx, my = idx % 10000, idx // 10000
         if (mx > 5000):
             mx -= 10000
             my += 1
-        return mx, my, counts[unsorted_max_indices[midx]]/srcs
+        return mx, my, counts[idxes[midx]]/srcs
 
     def limitSet(self, idx, deps):
         np.random.shuffle(idx)
@@ -170,15 +171,14 @@ class SquareIndex:
         # ダブルチェックで一致しないとOKとしない
         mx1, my1, c1 = self.searchRandom(sxy, dxy, deps)
         mx2, my2, c2 = self.searchRandom(sxy, dxy, deps)
-        if (mx1 == mx2 and my1 == my2 and c1 > 0.06): return mx1, my1, c1
+        if (mx1 == mx2 and my1 == my2): return mx1, my1, c1
         mx3, my3, c3 = self.searchRandom(sxy, dxy, deps)
-        if (mx1 == mx3 and my1 == my3 and c1 > 0.06): return mx1, my1, c1
-        if (mx2 == mx3 and my2 == my3 and c2 > 0.06): return mx2, my2, c2
+        if (mx1 == mx3 and my1 == my3): return mx1, my1, c1
+        if (mx2 == mx3 and my2 == my3): return mx2, my2, c2
 
         # ここで決着がつかない場合は、画像比較で結論を出す
-        print(' self.searchNXY - again - too bad')
         #return self.searchRandom(src, dst, sxy, dxy, deps*10, self.count)
-        return self.searchNRandom(src, dst, sxy, dxy, deps*3, self.count)
+        return self.searchNRandom(src, dst, sxy, dxy, deps, self.count)
         #return self.searchRandom(sxy, dxy, deps*3)
 
 def bokashi(img):
@@ -215,7 +215,7 @@ def movie2map(cap, outfile, startIndex, endIndex, rate, pcount, pbright, pdeps, 
 
     maskvar_test = np.zeros((h, w), dtype=np.float)
 
-    while c <= endIndex:
+    while c < endIndex:
         print (str.format('frame {:}/{:} ({:>5.1f}%) ----------- ', int(c), int(endIndex), (c/endIndex)*100))
         img = getImage(cap, c, iposx, iposy, width, height, compress)
 
@@ -301,7 +301,7 @@ def movie2map(cap, outfile, startIndex, endIndex, rate, pcount, pbright, pdeps, 
     print ('Complete!! -> {:} ({:8.2f}sec)'.format(outfile, process_time))
 
 def main():
-    print ('movie2map - a simple tool for generating 2D maps from 2D movies  v2.0-beta by pensil 2019.03.11')
+    print ('movie2map - a simple tool for generating 2D maps from 2D movies  v2.1-beta by pensil 2019.03.11')
     print ('')
     parser = argparse.ArgumentParser()
     parser.add_argument('input_filename')
@@ -311,7 +311,7 @@ def main():
     parser.add_argument('-e', metavar='END(sec)', type=int, default=180, help='終了位置(秒) デフォルト180秒 0にすると全て解析します')
     parser.add_argument('-r', metavar='RATE', type=int, default=20, help='解析フレーム間隔 小さくすると精度が 上がりますが時間がかかります')
     parser.add_argument('-c', metavar='COUNT', type=int, default=1500, help='サンプリング数(1000～5000) 多いほど 精度が上がりますが時間がかかります')
-    parser.add_argument('-b', metavar='BRITENESS', type=int, default=50, help='サンプリング閾値(20～128) 指定数より暗いポイントを識別します')
+    parser.add_argument('-b', metavar='BRITENESS', type=int, default=45, help='サンプリング閾値(20～128) 指定数より暗いポイントを識別します')
     parser.add_argument('-d', metavar='DEPS', type=int, default=4, help='畳み込み範囲(2～5) 変更する必要はありません')
     parser.add_argument('-test', action="store_true", help='比較テスト画像をworkフォルダに出力します 動作チェック用')
     parser.add_argument('-x', metavar='XPOS', type=int, default=0, help='開始左座標')
@@ -325,7 +325,7 @@ def main():
         sys.exit(1)
 
     args = parser.parse_args()
-    print(args)
+    #print(args)
 
     cap = cv2.VideoCapture(args.input_filename)
 

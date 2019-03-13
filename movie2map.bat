@@ -20,7 +20,10 @@ ECHO python.exe が見つかりません。バッチファイルにフルパス�
 GOTO ENDOFBATCH
 :PYTHONOK
 
-%PYTHON% movie2map.py -test %*
+@REM 前回の作業ファイルの削除
+DEL /F /Q work\*.png > NUL
+
+%PYTHON% movie2map.py %*
 PAUSE
 
 :ENDOFBATCH
